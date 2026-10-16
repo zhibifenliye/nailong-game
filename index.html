@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>奶龙消消乐 · 羊了个羊版</title>
+<style>
+  :root{
+    --amber:#ffb300; --amber2:#ff9800; --orange:#ff7043;
+    --cream:#fff8e1; --paper:#fffef7;
+    --ink:#4a2e00; --ink2:#7a5a1e;
+    --face1:#fffef7; --face2:#fff3d6; --face-line:#ffe0a3;
+    --shadow:0 4px 10px rgba(120,70,0,.18);
+    --shadow-up:0 8px 18px rgba(120,70,0,.28);
+    --font:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    min-height:100vh;
+    background:linear-gradient(180deg,#fff8e1 0%,#ffe9b8 60%,#ffdf9e 100%);
+    color:var(--ink);
+    font-family:var(--font);
+    touch-action:manipulation;
+    overflow-x:hidden;
+  }
+  #app{max-width:600px;margin:0 auto;padding:14px 14px 40px}
+
+  header{text-align:center;margin-bottom:10px}
+  header h1{margin:0;font-size:26px;letter-spacing:.02em}
+  header .sub{margin:4px 0 0;color:var(--ink2);font-size:13px}
+
+  .diff{display:flex;justify-content:center;gap:8px;margin:12px 0 10px}
+  .diff-btn{
+    flex:0 0 auto;padding:7px 18px;border:2px solid var(--face-line);
+    background:var(--paper);color:var(--ink2);font-size:14px;font-weight:600;
+    border-radius:999px;cursor:pointer;font-family:var(--font);transition:.15s;
+  }
+  .diff-btn.active{background:linear-gradient(120deg,var(--amber),var(--orange));border-color:var(--orange);color:#fff;box-shadow:var(--shadow)}
+
+  .stats{display:flex;justify-content:center;gap:18px;font-size:13px;color:var(--ink2);margin-bottom:8px}
+  .stats b{color:var(--ink);font-size:15px}
+
+  #boardWrap{
+    display:flex;justify-content:center;overflow:hidden;
+    margin:4px 0 2px;
+    background:radial-gradient(ellipse at 50% 38%,rgba(255,255,255,.55),rgba(255,179,0,.06) 70%);
+    border-radius:16px;
+  }
+  #board{position:relative;flex:0 0 auto;transform-origin:center top;will-change:transform}
+
+  .tile{position:absolute}
+  .tile .face{
+    position:absolute;inset:3px;border-radius:11px;
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(160deg,var(--face1),var(--face2));
+    border:2px solid var(--face-line);
+    box-shadow:var(--shadow);
+    transition:transform .1s ease,filter .15s ease;
+    overflow:hidden;
+  }
+  .tile .face img{width:100%;height:100%;object-fit:cover;border-radius:9px}
+  .tile .face .emoji{font-size:28px;line-height:1}
+  .tile:not(.clickable) .face{filter:grayscale(.15) brightness(.88);box-shadow:0 2px 5px rgba(120,70,0,.14)}
+  .tile.clickable{cursor:pointer}
+  .tile.clickable .face{box-shadow:var(--shadow-up)}
+  .tile.clickable:hover .face{transform:scale(1.05)}
+  .tile.clickable:active .face{transform:scale(.94)}
+
+  .hint{text-align:center;color:var(--ink2);font-size:12.5px;margin:10px 0}
+
+  #slot{
+    display:flex;justify-content:center;gap:6px;
+    background:linear-gradient(180deg,#fff3d6,#ffe9b8);
+    border:2px solid var(--face-line);border-radius:14px;
+    padding:8px;min-height:66px;margin:2px 0 14px;
+  }
+  .slot-cell{
+    position:relative;width:52px;height:58px;border-radius:9px;
+    border:2px dashed #e7c37a;background:rgba(255,255,255,.5);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .slot-cell.filled{border-style:solid;border-color:var(--face-line);
+    background:linear-gradient(160deg,var(--face1),var(--face2));box-shadow:var(--shadow)}
+  .slot-cell img{width:100%;height:100%;object-fit:cover;border-radius:7px}
+  .slot-cell .emoji{font-size:26px;line-height:1}
+
+  .tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .tools button{
+    position:relative;padding:10px 16px;border:2px solid var(--face-line);
+    background:var(--paper);color:var(--ink);font-size:14px;font-weight:600;
+    border-radius:12px;cursor:pointer;font-family:var(--font);transition:.12s;
+    box-shadow:var(--shadow);
+  }
+  .tools button:active{transform:translateY(1px)}
+  .tools button.off{opacity:.45}
+  .tools .use{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:18px;height:18px;padding:0 5px;margin-left:5px;
+    background:var(--orange);color:#fff;border-radius:999px;font-size:11px;
+  }
+  #restart{background:linear-gradient(120deg,var(--amber),var(--orange));border-color:var(--orange);color:#fff}
+
+  #overlay{
+    position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(60,35,0,.45);z-index:50;padding:20px;
+  }
+  #overlay .card{
+    background:var(--paper);border-radius:18px;padding:26px 24px;text-align:center;
+    max-width:320px;width:100%;box-shadow:0 20px 50px rgba(60,35,0,.35);
+  }
+  #ov-title{font-size:22px;font-weight:700;margin-bottom:6px}
+  #ov-msg{color:var(--ink2);font-size:14px;margin-bottom:18px}
+  #overlay .btns{display:flex;gap:10px;justify-content:center}
+  #overlay button{
+    padding:10px 20px;border-radius:12px;border:none;font-size:15px;font-weight:600;
+    cursor:pointer;font-family:var(--font);
+  }
+  #ov-revive{background:linear-gradient(120deg,#42c0ff,#4c9dff);color:#fff}
+  #ov-restart{background:linear-gradient(120deg,var(--amber),var(--orange));color:#fff}
+  #ov-close{background:none;color:var(--ink2);font-size:13px;margin-top:12px;text-decoration:underline}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🐉 奶龙消消乐</h1>
+    <div class="sub">羊了个羊 · 奶龙版 —— 凑齐三张就消除</div>
+  </header>
+
+  <div class="diff">
+    <button class="diff-btn active" data-level="easy">简单</button>
+    <button class="diff-btn" data-level="standard">标准</button>
+    <button class="diff-btn" data-level="hell">地狱</button>
+  </div>
+
+  <div class="stats">
+    <span>剩余 <b id="stat-left">0</b> 张</span>
+    <span>已消 <b id="stat-cleared">0</b> / <b id="stat-total">0</b></span>
+  </div>
+
+  <div id="boardWrap"><div id="board"></div></div>
+  <div class="hint">点上面的牌进卡槽 · 卡槽里凑齐 3 张相同自动消除 · 卡槽塞满 7 张就失败</div>
+
+  <div id="slot"></div>
+
+  <div class="tools">
+    <button id="undo">↩ 撤回<span class="use">3</span></button>
+    <button id="shuffle">🔀 洗牌<span class="use">3</span></button>
+    <button id="revive">🫧 复活<span class="use">1</span></button>
+    <button id="restart">🔁 重新开始</button>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <div id="ov-title"></div>
+    <div id="ov-msg"></div>
+    <div class="btns">
+      <button id="ov-revive">🫧 复活</button>
+      <button id="ov-restart">🔁 再来一局</button>
+    </div>
+    <button id="ov-close">关闭，继续用道具</button>
+  </div>
+</div>
+
+<script>
+/* ==================================================================
+   牌面图片：已从「奶蛙.jpg」中自动抠出 11 个奶龙表情包，放在 images/ 下。
+   想替换：直接覆盖 images/1.png ~ 11.png 即可（png/jpg/webp 均可）。
+   各难度用几张：简单 1~8，标准 1~10，地狱 1~11。
+   若某张图缺失，游戏会用 emoji 兜底，不影响游玩。
+   ================================================================== */
+const TILE_IMAGES = [
+  'images/1.png', 'images/2.png', 'images/3.png', 'images/4.png',
+  'images/5.png', 'images/6.png', 'images/7.png', 'images/8.png',
+  'images/9.png', 'images/10.png', 'images/11.png'
+];
+// 图片缺失时的 emoji 兜底（保证没图也能玩）
+const TILE_EMOJI = ['🐉','🍼','⭐','🥚','🍑','🍭','🎈','🧧','🌟','🍬','🍓','🐲'];
+
+/* ---- 难度配置：layers 从下往上，每层 c×r 个格子 ---- */
+const LEVELS = {
+  easy:     { name:'简单', layers:[{c:7,r:4},{c:5,r:4}],              types:8,  copies:6  },
+  standard: { name:'标准', layers:[{c:8,r:5},{c:6,r:5},{c:4,r:5}],    types:10, copies:9  },
+  hell:     { name:'地狱', layers:[{c:8,r:6},{c:6,r:6},{c:5,r:6},{c:3,r:6}], types:11, copies:12 }
+};
+
+const CELL_W = 54, CELL_H = 62, DEPTH = 8, PAD = 16, SLOT_MAX = 7;
+
+const state = {
+  level:'easy', tiles:[], slot:[], over:false, won:false,
+  undosLeft:3, shufflesLeft:3, revivesLeft:1
+};
+const IMG_OK = [];
+let boardW = 0, boardH = 0;
+
+const $ = id => document.getElementById(id);
+
+function shuffleArr(a){
+  for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+function buildLevel(levelKey){
+  const cfg = LEVELS[levelKey];
+  const tiles = [];
+  let id = 0;
+  cfg.layers.forEach((L, li) => {
+    for (let r=0;r<L.r;r++) for (let c=0;c<L.c;c++){
+      tiles.push({
+        id:id++, col:c, row:r, layer:li,
+        gx:c-(L.c-1)/2, gy:r-(L.r-1)/2,      // 全局居中的格子坐标（覆盖判定用）
+        type:0, removed:false, clickable:true
+      });
+    }
+  });
+  // 类型池：types 种 × copies 张，保证总数是 3 的倍数
+  const pool = [];
+  for (let t=0;t<cfg.types;t++) for (let k=0;k<cfg.copies;k++) pool.push(t);
+  shuffleArr(pool);
+  tiles.forEach((t,i)=>t.type=pool[i]);
+  // 包围盒 + 像素定位
+  let minGX=Infinity,maxGX=-Infinity,minGY=Infinity,maxGY=-Infinity,maxLayer=0;
+  tiles.forEach(t=>{
+    minGX=Math.min(minGX,t.gx); maxGX=Math.max(maxGX,t.gx);
+    minGY=Math.min(minGY,t.gy); maxGY=Math.max(maxGY,t.gy);
+    maxLayer=Math.max(maxLayer,t.layer);
+  });
+  boardW = (maxGX-minGX+1)*CELL_W + PAD*2;
+  boardH = (maxGY-minGY+1)*CELL_H + maxLayer*DEPTH + PAD*2;
+  tiles.forEach(t=>{
+    t.px = PAD + (t.gx-minGX)*CELL_W;
+    t.py = PAD + (t.gy-minGY)*CELL_H + (maxLayer-t.layer)*DEPTH;
+  });
+  return tiles;
+}
+
+function updateClickable(){
+  const alive = state.tiles.filter(t=>!t.removed);
+  alive.forEach(t=>t.clickable=true);
+  for (const t of alive){
+    for (const u of alive){
+      if (u.layer>t.layer && u.gx===t.gx && u.gy===t.gy){ t.clickable=false; break; }
+    }
+  }
+}
+
+function faceHTML(type){
+  if (IMG_OK[type]) return '<img src="'+TILE_IMAGES[type]+'" alt="" draggable="false">';
+  return '<span class="emoji">'+TILE_EMOJI[type]+'</span>';
+}
+
+function renderBoard(){
+  const board = $('board');
+  board.innerHTML = '';
+  const alive = state.tiles.filter(t=>!t.removed).sort((a,b)=>a.layer-b.layer);
+  for (const t of alive){
+    const el = document.createElement('div');
+    el.className = 'tile' + (t.clickable ? ' clickable' : '');
+    el.style.left = t.px+'px';
+    el.style.top  = t.py+'px';
+    el.style.width  = CELL_W+'px';
+    el.style.height = CELL_H+'px';
+    el.innerHTML = '<div class="face">'+faceHTML(t.type)+'</div>';
+    if (t.clickable) el.addEventListener('click', ()=>onTileClick(t));
+    board.appendChild(el);
+  }
+}
+
+function renderSlot(){
+  const slot = $('slot');
+  slot.innerHTML = '';
+  for (let i=0;i<SLOT_MAX;i++){
+    const d = document.createElement('div');
+    d.className = 'slot-cell' + (i<state.slot.length ? ' filled' : '');
+    if (i<state.slot.length) d.innerHTML = faceHTML(state.slot[i].type);
+    slot.appendChild(d);
+  }
+}
+
+function renderHUD(){
+  const left = state.tiles.filter(t=>!t.removed).length;
+  $('stat-left').textContent = left;
+  $('stat-cleared').textContent = state.tiles.length - left;
+  $('stat-total').textContent = state.tiles.length;
+  setUse('undo', state.undosLeft);
+  setUse('shuffle', state.shufflesLeft);
+  setUse('revive', state.revivesLeft);
+}
+function setUse(name, n){
+  const b = $(name);
+  b.querySelector('.use').textContent = n;
+  b.classList.toggle('off', n<=0);
+}
+
+function fit(){
+  const wrap = $('boardWrap');
+  const availW = wrap.clientWidth;
+  const s = Math.min(1, availW / boardW);
+  const scale = Math.max(0.4, s);
+  const board = $('board');
+  board.style.width = boardW+'px';
+  board.style.height = boardH+'px';
+  board.style.transform = 'scale('+scale+')';
+  wrap.style.height = (boardH*scale)+'px';
+}
+
+function render(){
+  renderBoard();
+  renderSlot();
+  renderHUD();
+  fit();
+}
+
+function onTileClick(t){
+  if (state.over || !t.clickable) return;
+  t.removed = true;
+  state.slot.push(t);
+  updateClickable();
+  resolveMatches();
+  render();
+  checkEnd();
+}
+
+function resolveMatches(){
+  let changed = true;
+  while (changed){
+    changed = false;
+    const counts = new Map();
+    state.slot.forEach(s=>counts.set(s.type,(counts.get(s.type)||0)+1));
+    for (const [type,count] of counts){
+      if (count >= 3){
+        let rem = 0;
+        state.slot = state.slot.filter(s=>{
+          if (s.type===type && rem<3){ rem++; return false; }
+          return true;
+        });
+        changed = true;
+      }
+    }
+  }
+}
+
+function checkEnd(){
+  const boardLeft = state.tiles.some(t=>!t.removed);
+  if (!boardLeft && state.slot.length===0){ win(); return; }
+  if (state.slot.length >= SLOT_MAX){ lose(); return; }
+}
+
+function win(){
+  state.over = true; state.won = true;
+  $('ov-title').textContent = '🎉 通关啦！';
+  $('ov-msg').textContent = '你清空了所有牌，太厉害了！';
+  $('ov-revive').style.display = 'none';
+  $('ov-close').style.display = 'none';
+  $('overlay').style.display = 'flex';
+}
+function lose(){
+  state.over = true; state.won = false;
+  $('ov-title').textContent = '😵 卡槽塞满啦！';
+  $('ov-msg').textContent = '别灰心，可以复活、洗牌或撤回再试一次~';
+  $('ov-revive').style.display = (state.revivesLeft>0) ? '' : 'none';
+  $('ov-close').style.display = '';
+  $('overlay').style.display = 'flex';
+}
+
+function undo(){
+  if (state.over || state.undosLeft<=0 || state.slot.length===0) return;
+  state.undosLeft--;
+  const n = Math.min(3, state.slot.length);
+  for (let i=0;i<n;i++){ const t = state.slot.pop(); t.removed = false; }
+  updateClickable();
+  render();
+}
+
+function shuffleTiles(){
+  if (state.over || state.shufflesLeft<=0) return;
+  state.shufflesLeft--;
+  const alive = state.tiles.filter(t=>!t.removed);
+  const types = alive.map(t=>t.type);
+  shuffleArr(types);
+  alive.forEach((t,i)=>t.type=types[i]);
+  render();
+}
+
+function revive(){
+  if (!state.over || state.won || state.revivesLeft<=0) return;
+  state.revivesLeft--;
+  state.slot = state.slot.slice(3);          // 清掉槽里最早加入的 3 张，腾出空间
+  state.over = false;
+  $('overlay').style.display = 'none';
+  render();
+}
+
+function start(levelKey){
+  state.level = levelKey;
+  state.tiles = buildLevel(levelKey);
+  state.slot = [];
+  state.undosLeft = 3;
+  state.shufflesLeft = 3;
+  state.revivesLeft = 1;
+  state.over = false; state.won = false;
+  updateClickable();
+  render();
+  $('overlay').style.display = 'none';
+  document.querySelectorAll('.diff-btn').forEach(b=>
+    b.classList.toggle('active', b.dataset.level===levelKey));
+}
+
+function preloadImages(){
+  return Promise.all(TILE_IMAGES.map(src => new Promise(res=>{
+    const im = new Image();
+    im.onload = ()=>res(true);
+    im.onerror = ()=>res(false);
+    im.src = src;
+  }))).then(results=>results.forEach((ok,i)=>IMG_OK[i]=ok));
+}
+
+(async function init(){
+  await preloadImages();
+  document.querySelectorAll('.diff-btn').forEach(b=>b.onclick=()=>start(b.dataset.level));
+  $('undo').onclick = undo;
+  $('shuffle').onclick = shuffleTiles;
+  $('revive').onclick = revive;
+  $('restart').onclick = ()=>start(state.level);
+  $('ov-restart').onclick = ()=>start(state.level);
+  $('ov-revive').onclick = revive;
+  $('ov-close').onclick = ()=>$('overlay').style.display='none';
+  window.addEventListener('resize', fit);
+  start('easy');
+})();
+</script>
+</body>
+</html>
