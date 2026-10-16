@@ -61,9 +61,16 @@
   }
   .tile .face img{width:100%;height:100%;object-fit:cover;border-radius:9px}
   .tile .face .emoji{font-size:28px;line-height:1}
-  .tile:not(.clickable) .face{filter:grayscale(.15) brightness(.88);box-shadow:0 2px 5px rgba(120,70,0,.14)}
+  .tile:not(.clickable) .face{
+    filter:grayscale(.5) brightness(.58) saturate(.75);
+    border-color:#d9d0bf;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.06), 0 2px 4px rgba(120,70,0,.12);
+  }
   .tile.clickable{cursor:pointer}
-  .tile.clickable .face{box-shadow:var(--shadow-up)}
+  .tile.clickable .face{
+    border-color:#ffb300;
+    box-shadow:0 0 0 2px rgba(255,179,0,.55), var(--shadow-up);
+  }
   .tile.clickable:hover .face{transform:scale(1.05)}
   .tile.clickable:active .face,
   .tile.clickable.pressed .face{transform:scale(.92)}
@@ -218,13 +225,13 @@ const TILE_IMAGES = [
 // 图片缺失时的 emoji 兜底（保证没图也能玩）
 const TILE_EMOJI = ['🐸','🍼','⭐','🥚','🍑','🍭','🎈','🧧','🌟','🍬','🍓','🌿'];
 
-/* ---- 难度配置：layers 从下往上，每层 c×r 个格子 ----
+/* ---- 难度配置：counts 从下往上给出每层张数，叠成蜂窝菱形金字塔 ----
    copies 必须是 3 的倍数（凑三张才消除），且 types×copies === 总张数。
    地狱：6 层深埋 + 重叠覆盖判定，接近原版的「经常过不去」难度。 ---- */
 const LEVELS = {
-  easy:     { name:'简单', layers:[{c:7,r:4},{c:5,r:4}],                                              types:8,  copies:6  },
-  standard: { name:'标准', layers:[{c:9,r:5},{c:7,r:5},{c:5,r:5},{c:3,r:5}],                          types:10, copies:12 },
-  hell:     { name:'地狱', layers:[{c:8,r:6},{c:7,r:6},{c:6,r:6},{c:5,r:6},{c:4,r:6},{c:3,r:6}],      types:11, copies:18 }
+  easy:     { name:'简单', counts:[32, 16],                     types:8,  copies:6  },
+  standard: { name:'标准', counts:[45, 33, 24, 18],             types:10, copies:12 },
+  hell:     { name:'地狱', counts:[60, 48, 36, 27, 18, 9],      types:11, copies:18 }
 };
 
 const CELL_W = 54, CELL_H = 62, DEPTH = 8, PAD = 16, SLOT_MAX = 7;
@@ -242,36 +249,61 @@ function shuffleArr(a){
   return a;
 }
 
+// 生成一层「由中心向外」的圆润菱形簇（正好 target 张），避免整块长方形的密集感
+function layerCells(target){
+  const all = [];
+  const R = Math.ceil(Math.sqrt(target)) + 1;
+  for (let gy=-R; gy<=R; gy++){
+    for (let gx=-R; gx<=R; gx++){
+      all.push({gx, gy, d: Math.abs(gx)+Math.abs(gy)});
+    }
+  }
+  all.sort((a,b)=>a.d-b.d);
+  return all.slice(0, target).map(c=>({gx:c.gx, gy:c.gy}));
+}
+function jitter(){ return (Math.random()*2-1)*1.5; }
+
 function buildLevel(levelKey){
   const cfg = LEVELS[levelKey];
   const tiles = [];
   let id = 0;
-  cfg.layers.forEach((L, li) => {
-    for (let r=0;r<L.r;r++) for (let c=0;c<L.c;c++){
+  cfg.counts.forEach((target, li) => {
+    layerCells(target).forEach(c => {
+      // 奇数行横向错开半格 → 蜂窝堆叠，摆脱呆板方格
+      const gx = c.gx + ((c.gy & 1) ? 0.5 : 0);
       tiles.push({
-        id:id++, col:c, row:r, layer:li,
-        gx:c-(L.c-1)/2, gy:r-(L.r-1)/2,      // 全局居中的格子坐标
+        id:id++, col:c.gx, row:c.gy, layer:li,
+        gx, gy:c.gy,
         type:0, removed:false, clickable:true, el:null
       });
-    }
+    });
   });
   // 类型池：types 种 × copies 张，保证总数是 3 的倍数
   const pool = [];
   for (let t=0;t<cfg.types;t++) for (let k=0;k<cfg.copies;k++) pool.push(t);
   shuffleArr(pool);
   tiles.forEach((t,i)=>t.type=pool[i]);
-  // 包围盒 + 像素定位
+  // 像素定位：含蜂窝错位 + 轻微随机抖动，再按真实包围盒平移居中
   let minGX=Infinity,maxGX=-Infinity,minGY=Infinity,maxGY=-Infinity,maxLayer=0;
   tiles.forEach(t=>{
     minGX=Math.min(minGX,t.gx); maxGX=Math.max(maxGX,t.gx);
     minGY=Math.min(minGY,t.gy); maxGY=Math.max(maxGY,t.gy);
     maxLayer=Math.max(maxLayer,t.layer);
   });
-  boardW = (maxGX-minGX+1)*CELL_W + PAD*2;
-  boardH = (maxGY-minGY+1)*CELL_H + maxLayer*DEPTH + PAD*2;
   tiles.forEach(t=>{
-    t.px = PAD + (t.gx-minGX)*CELL_W;
-    t.py = PAD + (t.gy-minGY)*CELL_H + (maxLayer-t.layer)*DEPTH;
+    t.px = (t.gx-minGX)*CELL_W + jitter();
+    t.py = (t.gy-minGY)*CELL_H + (maxLayer-t.layer)*DEPTH + jitter();
+  });
+  let minPX=Infinity,maxPX=-Infinity,minPY=Infinity,maxPY=-Infinity;
+  tiles.forEach(t=>{
+    minPX=Math.min(minPX,t.px); maxPX=Math.max(maxPX,t.px+CELL_W);
+    minPY=Math.min(minPY,t.py); maxPY=Math.max(maxPY,t.py+CELL_H);
+  });
+  boardW = (maxPX-minPX) + PAD*2;
+  boardH = (maxPY-minPY) + PAD*2;
+  tiles.forEach(t=>{
+    t.px = PAD + (t.px-minPX);
+    t.py = PAD + (t.py-minPY);
   });
   return tiles;
 }
