@@ -237,12 +237,13 @@ const TILE_EMOJI = ['🐸','🍼','⭐','🥚','🍑','🍭','🎈','🧧','🌟
    copies 必须是 3 的倍数（凑三张才消除），且 types×copies === 总张数。
    地狱：6 层深埋 + 重叠覆盖判定，接近原版的「经常过不去」难度。 ---- */
 const LEVELS = {
-  easy:     { name:'简单', counts:[24, 15, 9],                      types:8,  copies:6  },
-  standard: { name:'标准', counts:[30, 26, 22, 18, 14, 10],         types:10, copies:12 },
-  hell:     { name:'地狱', counts:[28, 25, 23, 21, 19, 17, 16, 16], types:11, copies:15 }
+  easy:     { name:'简单', types:8,  copies:6,  maxLayer:3, flatTop:0.45 },
+  standard: { name:'标准', types:10, copies:9,  maxLayer:4, flatTop:0.45 },
+  hell:     { name:'地狱', types:11, copies:9,  maxLayer:5, flatTop:0.45 }
 };
 
-const CELL_W = 66, CELL_H = 74, DEPTH = 9, PAD = 20, SLOT_MAX = 7;
+const CELL_W = 66, CELL_H = 74, FACE_INSET = 3, PAD = 20, SLOT_MAX = 7;
+const PITCH_X = 46, PITCH_Y = 50, DEPTH = 4, ASPECT = 1.5;
 
 const state = {
   level:'easy', tiles:[], slot:[], over:false, won:false,
@@ -257,55 +258,58 @@ function shuffleArr(a){
   return a;
 }
 
-// 生成一层「由中心向外」的圆润菱形簇（正好 target 张），避免整块长方形的密集感
-function layerCells(target){
-  const all = [];
-  const R = Math.ceil(Math.sqrt(target)) + 1;
-  for (let gy=-R; gy<=R; gy++){
-    for (let gx=-R; gx<=R; gx++){
-      // 椭圆距离：横向权重更高 → 牌堆更「瘦高」，更像原版竖金字塔，牌面也能更大
-      const d = Math.sqrt((gx*1.2)*(gx*1.2) + gy*gy);
-      all.push({gx, gy, d});
-    }
-  }
-  all.sort((a,b)=>a.d-b.d);
-  return all.slice(0, target).map(c=>({gx:c.gx, gy:c.gy}));
-}
-function jitter(){ return (Math.random()*2-1)*1.5; }
-
+// 六角蜂窝牌堆：每张牌占一个独立格点、奇数行错半格 → 相邻牌错开、互相小幅度重叠，
+// 下层牌的上缘/侧缘能露出来，而不是同一位置竖直死摞。layer 是离散高度（越大越靠上）。
 function buildLevel(levelKey){
   const cfg = LEVELS[levelKey];
+  const total = cfg.types * cfg.copies;
   const tiles = [];
   let id = 0;
-  cfg.counts.forEach((target, li) => {
-    layerCells(target).forEach(c => {
-      // 奇数行横向错开半格 → 蜂窝堆叠，摆脱呆板方格
-      const gx = c.gx + ((c.gy & 1) ? 0.5 : 0);
-      tiles.push({
-        id:id++, col:c.gx, row:c.gy, layer:li,
-        gx, gy:c.gy,
-        type:0, removed:false, clickable:true, el:null
-      });
+
+  // 1) 椭圆蜂窝里取正好 total 个格点（按离中心距离从近到远）
+  const cells = [];
+  let R = 2;
+  while (true){
+    const tmp = [];
+    for (let gy=-R; gy<=R; gy++){
+      for (let gx=-R; gx<=R; gx++){
+        const d = Math.sqrt((gx*ASPECT)*(gx*ASPECT) + gy*gy);
+        if (d <= R) tmp.push({gx, gy, d});
+      }
+    }
+    if (tmp.length >= total){ cells.push(...tmp); break; }
+    R++;
+  }
+  cells.sort((a,b)=>a.d-b.d);
+  const chosen = cells.slice(0, total);
+  const maxD = chosen[chosen.length-1].d || 1;
+
+  // 2) 高度场 + 平顶：中心一片同为顶层(完全露出、可点)，四周逐级下降。
+  //    平顶保证开局有大量可点牌；离散整数层级保证相邻牌 z 序明确。
+  const FLAT = cfg.flatTop;
+  chosen.forEach(c=>{
+    let h;
+    if (c.d <= FLAT*maxD) h = cfg.maxLayer;
+    else h = cfg.maxLayer * (1 - (c.d - FLAT*maxD)/(maxD - FLAT*maxD));
+    const layer = Math.max(0, Math.min(cfg.maxLayer, Math.round(h)));
+    const gx = c.gx + ((c.gy & 1) ? 0.5 : 0);   // 奇数行蜂窝错位
+    tiles.push({
+      id:id++, gx, gy:c.gy, layer,
+      type:0, removed:false, clickable:true, el:null
     });
   });
-  // 类型池：types 种 × copies 张，保证总数是 3 的倍数
+
+  // 3) 类型池：types 种 × copies 张（copies 为 3 的倍数，保证可清空）
   const pool = [];
   for (let t=0;t<cfg.types;t++) for (let k=0;k<cfg.copies;k++) pool.push(t);
   shuffleArr(pool);
   tiles.forEach((t,i)=>t.type=pool[i]);
-  // 像素定位：含蜂窝错位 + 轻微随机抖动，再按真实包围盒平移居中
-  let minGX=Infinity,maxGX=-Infinity,minGY=Infinity,maxGY=-Infinity,maxLayer=0;
-  tiles.forEach(t=>{
-    minGX=Math.min(minGX,t.gx); maxGX=Math.max(maxGX,t.gx);
-    minGY=Math.min(minGY,t.gy); maxGY=Math.max(maxGY,t.gy);
-    maxLayer=Math.max(maxLayer,t.layer);
-  });
-  tiles.forEach(t=>{
-    t.px = (t.gx-minGX)*CELL_W + jitter();
-    t.py = (t.gy-minGY)*CELL_H + (maxLayer-t.layer)*DEPTH + jitter();
-  });
+
+  // 4) 像素定位：蜂窝间距(互相小重叠) + 高度抬升 + 轻微抖动，再按包围盒居中
   let minPX=Infinity,maxPX=-Infinity,minPY=Infinity,maxPY=-Infinity;
   tiles.forEach(t=>{
+    t.px = t.gx*PITCH_X + jitter();
+    t.py = t.gy*PITCH_Y - t.layer*DEPTH + jitter();
     minPX=Math.min(minPX,t.px); maxPX=Math.max(maxPX,t.px+CELL_W);
     minPY=Math.min(minPY,t.py); maxPY=Math.max(maxPY,t.py+CELL_H);
   });
@@ -318,9 +322,16 @@ function buildLevel(levelKey){
   return tiles;
 }
 
-// 覆盖判定：更高层的牌只要与这张牌「像素矩形有重叠」就挡住它（更接近原版的叠放手感）
+function jitter(){ return (Math.random()*2-1)*1.5; }
+
+// 覆盖判定：只用「可见牌面」的矩形（内缩 FACE_INSET，即边框内的画面），
+// 与玩家肉眼看到的一致——完全没被挡的才可点，被压住一点的都不能点。
+function faceRect(t){
+  return { x:t.px+FACE_INSET, y:t.py+FACE_INSET, w:CELL_W-FACE_INSET*2, h:CELL_H-FACE_INSET*2 };
+}
 function overlaps(u, t){
-  return !(u.px >= t.px+CELL_W || u.px+CELL_W <= t.px || u.py >= t.py+CELL_H || u.py+CELL_H <= t.py);
+  const a = faceRect(u), b = faceRect(t);
+  return !(a.x >= b.x+b.w || a.x+a.w <= b.x || a.y >= b.y+b.h || a.y+a.h <= b.y);
 }
 function updateClickable(){
   const alive = state.tiles.filter(t=>!t.removed);
