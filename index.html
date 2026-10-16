@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>奶龙消消乐 · 羊了个羊版</title>
+<title>奶了个蛙 · 羊了个羊玩法</title>
 <style>
   :root{
     --amber:#ffb300; --amber2:#ff9800; --orange:#ff7043;
@@ -24,7 +24,7 @@
     touch-action:manipulation;
     overflow-x:hidden;
   }
-  #app{max-width:600px;margin:0 auto;padding:14px 14px 40px}
+  #app{max-width:600px;margin:0 auto;padding:14px 14px 40px;-webkit-user-select:none;user-select:none}
 
   header{text-align:center;margin-bottom:10px}
   header h1{margin:0;font-size:26px;letter-spacing:.02em}
@@ -65,7 +65,8 @@
   .tile.clickable{cursor:pointer}
   .tile.clickable .face{box-shadow:var(--shadow-up)}
   .tile.clickable:hover .face{transform:scale(1.05)}
-  .tile.clickable:active .face{transform:scale(.94)}
+  .tile.clickable:active .face,
+  .tile.clickable.pressed .face{transform:scale(.92)}
 
   .hint{text-align:center;color:var(--ink2);font-size:12.5px;margin:10px 0}
 
@@ -84,6 +85,36 @@
     background:linear-gradient(160deg,var(--face1),var(--face2));box-shadow:var(--shadow)}
   .slot-cell img{width:100%;height:100%;object-fit:cover;border-radius:7px}
   .slot-cell .emoji{font-size:26px;line-height:1}
+  .slot-cell.landing img,
+  .slot-cell.landing .emoji{animation:land .2s cubic-bezier(.34,1.56,.64,1)}
+  .slot-cell.matching img,
+  .slot-cell.matching .emoji{animation:matchPop .3s cubic-bezier(.34,1.56,.64,1) forwards}
+
+  @keyframes land{0%{transform:scale(.6)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
+  @keyframes matchPop{
+    0%{transform:scale(1);filter:none}
+    40%{transform:scale(1.3);filter:brightness(1.3) drop-shadow(0 0 12px #ffd54f)}
+    70%{transform:scale(.9) rotate(-4deg)}
+    100%{transform:scale(0);opacity:0;filter:brightness(1.7)}
+  }
+
+  .fly-clone{
+    position:fixed;z-index:200;pointer-events:none;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(160deg,var(--face1),var(--face2));
+    border:2px solid var(--face-line);border-radius:11px;
+    box-shadow:0 12px 24px rgba(120,70,0,.35);
+    transition:left .17s cubic-bezier(.2,.7,.3,1),top .17s cubic-bezier(.2,.7,.3,1),transform .17s cubic-bezier(.2,.7,.3,1);
+  }
+  .fly-clone img{width:100%;height:100%;object-fit:cover;border-radius:9px}
+  .fly-clone .emoji{font-size:26px;line-height:1}
+
+  .burst{position:fixed;width:8px;height:8px;border-radius:50%;z-index:210;pointer-events:none;
+    animation:burstFly .42s ease-out forwards}
+  @keyframes burstFly{
+    0%{transform:translate(-50%,-50%) scale(1);opacity:1}
+    100%{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(.2);opacity:0}
+  }
 
   .tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   .tools button{
@@ -100,6 +131,12 @@
     background:var(--orange);color:#fff;border-radius:999px;font-size:11px;
   }
   #restart{background:linear-gradient(120deg,var(--amber),var(--orange));border-color:var(--orange);color:#fff}
+
+  #mute{
+    position:fixed;top:10px;right:10px;z-index:60;width:42px;height:42px;
+    border-radius:50%;border:2px solid var(--face-line);background:rgba(255,255,255,.85);
+    font-size:19px;cursor:pointer;box-shadow:var(--shadow);font-family:var(--font);
+  }
 
   #overlay{
     position:fixed;inset:0;display:none;align-items:center;justify-content:center;
@@ -124,8 +161,8 @@
 <body>
 <div id="app">
   <header>
-    <h1>🐉 奶龙消消乐</h1>
-    <div class="sub">羊了个羊 · 奶龙版 —— 凑齐三张就消除</div>
+    <h1>🐸 奶了个蛙</h1>
+    <div class="sub">羊了个羊玩法 · 奶蛙主题 —— 凑齐三张就消除</div>
   </header>
 
   <div class="diff">
@@ -152,6 +189,8 @@
   </div>
 </div>
 
+<button id="mute" title="音效开关">🔊</button>
+
 <div id="overlay">
   <div class="card">
     <div id="ov-title"></div>
@@ -166,10 +205,10 @@
 
 <script>
 /* ==================================================================
-   牌面图片：已从「奶蛙.jpg」中自动抠出 11 个奶龙表情包，放在 images/ 下。
+   牌面图片：已从「奶蛙.jpg」中自动抠出 11 个奶蛙表情包，放在 images/ 下。
    想替换：直接覆盖 images/1.png ~ 11.png 即可（png/jpg/webp 均可）。
    各难度用几张：简单 1~8，标准 1~10，地狱 1~11。
-   若某张图缺失，游戏会用 emoji 兜底，不影响游玩。
+   图片始终优先显示真实图；仅当某张图真的加载失败时才用 emoji 兜底。
    ================================================================== */
 const TILE_IMAGES = [
   'images/1.png', 'images/2.png', 'images/3.png', 'images/4.png',
@@ -177,13 +216,15 @@ const TILE_IMAGES = [
   'images/9.png', 'images/10.png', 'images/11.png'
 ];
 // 图片缺失时的 emoji 兜底（保证没图也能玩）
-const TILE_EMOJI = ['🐉','🍼','⭐','🥚','🍑','🍭','🎈','🧧','🌟','🍬','🍓','🐲'];
+const TILE_EMOJI = ['🐸','🍼','⭐','🥚','🍑','🍭','🎈','🧧','🌟','🍬','🍓','🌿'];
 
-/* ---- 难度配置：layers 从下往上，每层 c×r 个格子 ---- */
+/* ---- 难度配置：layers 从下往上，每层 c×r 个格子 ----
+   copies 必须是 3 的倍数（凑三张才消除），且 types×copies === 总张数。
+   地狱：6 层深埋 + 重叠覆盖判定，接近原版的「经常过不去」难度。 ---- */
 const LEVELS = {
-  easy:     { name:'简单', layers:[{c:7,r:4},{c:5,r:4}],              types:8,  copies:6  },
-  standard: { name:'标准', layers:[{c:8,r:5},{c:6,r:5},{c:4,r:5}],    types:10, copies:9  },
-  hell:     { name:'地狱', layers:[{c:8,r:6},{c:6,r:6},{c:5,r:6},{c:3,r:6}], types:11, copies:12 }
+  easy:     { name:'简单', layers:[{c:7,r:4},{c:5,r:4}],                                              types:8,  copies:6  },
+  standard: { name:'标准', layers:[{c:9,r:5},{c:7,r:5},{c:5,r:5},{c:3,r:5}],                          types:10, copies:12 },
+  hell:     { name:'地狱', layers:[{c:8,r:6},{c:7,r:6},{c:6,r:6},{c:5,r:6},{c:4,r:6},{c:3,r:6}],      types:11, copies:18 }
 };
 
 const CELL_W = 54, CELL_H = 62, DEPTH = 8, PAD = 16, SLOT_MAX = 7;
@@ -192,8 +233,7 @@ const state = {
   level:'easy', tiles:[], slot:[], over:false, won:false,
   undosLeft:3, shufflesLeft:3, revivesLeft:1
 };
-const IMG_OK = [];
-let boardW = 0, boardH = 0;
+let boardW = 0, boardH = 0, busy = false;
 
 const $ = id => document.getElementById(id);
 
@@ -210,8 +250,8 @@ function buildLevel(levelKey){
     for (let r=0;r<L.r;r++) for (let c=0;c<L.c;c++){
       tiles.push({
         id:id++, col:c, row:r, layer:li,
-        gx:c-(L.c-1)/2, gy:r-(L.r-1)/2,      // 全局居中的格子坐标（覆盖判定用）
-        type:0, removed:false, clickable:true
+        gx:c-(L.c-1)/2, gy:r-(L.r-1)/2,      // 全局居中的格子坐标
+        type:0, removed:false, clickable:true, el:null
       });
     }
   });
@@ -236,19 +276,31 @@ function buildLevel(levelKey){
   return tiles;
 }
 
+// 覆盖判定：更高层的牌只要与这张牌「像素矩形有重叠」就挡住它（更接近原版的叠放手感）
+function overlaps(u, t){
+  return !(u.px >= t.px+CELL_W || u.px+CELL_W <= t.px || u.py >= t.py+CELL_H || u.py+CELL_H <= t.py);
+}
 function updateClickable(){
   const alive = state.tiles.filter(t=>!t.removed);
   alive.forEach(t=>t.clickable=true);
   for (const t of alive){
     for (const u of alive){
-      if (u.layer>t.layer && u.gx===t.gx && u.gy===t.gy){ t.clickable=false; break; }
+      if (u.layer<=t.layer) continue;
+      if (overlaps(u,t)){ t.clickable=false; break; }
     }
   }
 }
 
 function faceHTML(type){
-  if (IMG_OK[type]) return '<img src="'+TILE_IMAGES[type]+'" alt="" draggable="false">';
-  return '<span class="emoji">'+TILE_EMOJI[type]+'</span>';
+  return '<img src="'+TILE_IMAGES[type]+'" alt="" draggable="false" loading="eager" ' +
+         'onerror="imgFallback(this,'+type+')">';
+}
+// 仅当某张图真的加载失败时，才把它替换成 emoji（全局函数，供行内 onerror 调用）
+function imgFallback(el, type){
+  const s = document.createElement('span');
+  s.className = 'emoji';
+  s.textContent = TILE_EMOJI[type] || '🐸';
+  el.replaceWith(s);
 }
 
 function renderBoard(){
@@ -263,7 +315,13 @@ function renderBoard(){
     el.style.width  = CELL_W+'px';
     el.style.height = CELL_H+'px';
     el.innerHTML = '<div class="face">'+faceHTML(t.type)+'</div>';
-    if (t.clickable) el.addEventListener('click', ()=>onTileClick(t));
+    if (t.clickable){
+      el.addEventListener('click', ()=>onTileClick(t));
+      el.addEventListener('pointerdown', ()=>{ if(!state.over) el.classList.add('pressed'); });
+      ['pointerup','pointercancel','pointerleave'].forEach(ev=>
+        el.addEventListener(ev, ()=>el.classList.remove('pressed')));
+    }
+    t.el = el;
     board.appendChild(el);
   }
 }
@@ -313,33 +371,145 @@ function render(){
   fit();
 }
 
-function onTileClick(t){
-  if (state.over || !t.clickable) return;
+/* ================= 音效 & 震动 ================= */
+let audioCtx = null;
+let muted = false;
+try{ muted = localStorage.getItem('nlw_mute')==='1'; }catch(e){}
+function beep(freq, dur, type, gain, when){
+  if (muted) return;
+  try{
+    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if (audioCtx.state==='suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime + (when||0);
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t0); o.stop(t0+dur+0.03);
+  }catch(e){}
+}
+function sndPick(){ beep(520,0.06,'triangle',0.05); }
+function sndMatch(){ beep(660,0.08,'triangle',0.07,0); beep(880,0.09,'triangle',0.06,0.06); beep(1320,0.12,'triangle',0.05,0.12); }
+function sndLose(){ beep(220,0.25,'sawtooth',0.05); beep(160,0.3,'sawtooth',0.05,0.12); }
+function sndWin(){ [523,659,784,1047].forEach((f,i)=>beep(f,0.18,'triangle',0.07,i*0.09)); }
+function buzz(ms){ try{ if (navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+
+/* ================= 动画 ================= */
+function slotCellEl(i){ return $('slot').children[i]; }
+
+function animateFly(src, dst, type){
+  return new Promise(res=>{
+    const clone = document.createElement('div');
+    clone.className = 'fly-clone';
+    clone.innerHTML = faceHTML(type);
+    clone.style.width = src.width+'px';
+    clone.style.height = src.height+'px';
+    clone.style.left = src.left+'px';
+    clone.style.top = src.top+'px';
+    document.body.appendChild(clone);
+
+    const cell = slotCellEl(state.slot.length-1);
+    const cellFace = cell ? (cell.querySelector('img')||cell.querySelector('.emoji')) : null;
+    if (cellFace) cellFace.style.opacity = '0';
+
+    const s = Math.min(1, dst.width/src.width, dst.height/src.height);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      clone.style.left = (dst.left + dst.width/2 - src.width/2)+'px';
+      clone.style.top  = (dst.top  + dst.height/2 - src.height/2)+'px';
+      clone.style.transform = 'scale('+s+')';
+    }));
+
+    setTimeout(()=>{
+      clone.remove();
+      if (cellFace){ cellFace.style.transition='opacity .12s ease'; cellFace.style.opacity = '1'; }
+      const c = slotCellEl(state.slot.length-1);
+      if (c){ c.classList.add('landing'); setTimeout(()=>c.classList.remove('landing'), 240); }
+      res();
+    }, 185);
+  });
+}
+
+function spawnBurst(rect){
+  const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+  const colors = ['#ffd54f','#ff9800','#ff7043','#fff176'];
+  for (let i=0;i<9;i++){
+    const p = document.createElement('i');
+    p.className = 'burst';
+    const ang = (Math.PI*2*i)/9 + Math.random()*0.5;
+    const dist = 22 + Math.random()*24;
+    p.style.left = cx+'px';
+    p.style.top = cy+'px';
+    p.style.background = colors[i%colors.length];
+    p.style.setProperty('--dx', Math.cos(ang)*dist+'px');
+    p.style.setProperty('--dy', Math.sin(ang)*dist+'px');
+    document.body.appendChild(p);
+    setTimeout(()=>p.remove(), 430);
+  }
+}
+
+/* ================= 核心流程 ================= */
+function findMatch(){
+  const counts = new Map();
+  state.slot.forEach((s,i)=>counts.set(s.type,(counts.get(s.type)||0)+1));
+  for (const [type,count] of counts){
+    if (count >= 3){
+      const idx = [];
+      for (let i=0;i<state.slot.length && idx.length<3;i++){
+        if (state.slot[i].type===type) idx.push(i);
+      }
+      return {type, idx};
+    }
+  }
+  return null;
+}
+
+function eliminateMatch(m){
+  return new Promise(res=>{
+    sndMatch(); buzz(20);
+    const cells = m.idx.map(i=>slotCellEl(i)).filter(Boolean);
+    cells.forEach(c=>c.classList.add('matching'));
+    const mid = cells[1] || cells[0];
+    if (mid) spawnBurst(mid.getBoundingClientRect());
+    setTimeout(()=>{
+      const set = new Set(m.idx);
+      state.slot = state.slot.filter((s,i)=>!set.has(i));
+      render();
+      res();
+    }, 300);
+  });
+}
+
+async function onTileClick(t){
+  if (busy || state.over || !t.clickable) return;
+  busy = true;
+
+  const faceEl = t.el ? t.el.querySelector('.face') : null;
+  const srcRect = faceEl ? faceEl.getBoundingClientRect() : null;
+
   t.removed = true;
   state.slot.push(t);
   updateClickable();
-  resolveMatches();
   render();
-  checkEnd();
-}
 
-function resolveMatches(){
-  let changed = true;
-  while (changed){
-    changed = false;
-    const counts = new Map();
-    state.slot.forEach(s=>counts.set(s.type,(counts.get(s.type)||0)+1));
-    for (const [type,count] of counts){
-      if (count >= 3){
-        let rem = 0;
-        state.slot = state.slot.filter(s=>{
-          if (s.type===type && rem<3){ rem++; return false; }
-          return true;
-        });
-        changed = true;
-      }
-    }
+  sndPick(); buzz(8);
+
+  if (srcRect){
+    const cell = slotCellEl(state.slot.length-1);
+    const cellRect = cell ? cell.getBoundingClientRect() : null;
+    if (cellRect) await animateFly(srcRect, cellRect, t.type);
   }
+
+  // 循环消除（可能连消），每次都有动画
+  while (true){
+    const m = findMatch();
+    if (!m) break;
+    await eliminateMatch(m);
+  }
+
+  busy = false;
+  checkEnd();
 }
 
 function checkEnd(){
@@ -350,6 +520,7 @@ function checkEnd(){
 
 function win(){
   state.over = true; state.won = true;
+  sndWin(); buzz([30,40,30]);
   $('ov-title').textContent = '🎉 通关啦！';
   $('ov-msg').textContent = '你清空了所有牌，太厉害了！';
   $('ov-revive').style.display = 'none';
@@ -358,6 +529,7 @@ function win(){
 }
 function lose(){
   state.over = true; state.won = false;
+  sndLose(); buzz([40,30,40]);
   $('ov-title').textContent = '😵 卡槽塞满啦！';
   $('ov-msg').textContent = '别灰心，可以复活、洗牌或撤回再试一次~';
   $('ov-revive').style.display = (state.revivesLeft>0) ? '' : 'none';
@@ -366,7 +538,7 @@ function lose(){
 }
 
 function undo(){
-  if (state.over || state.undosLeft<=0 || state.slot.length===0) return;
+  if (busy || state.over || state.undosLeft<=0 || state.slot.length===0) return;
   state.undosLeft--;
   const n = Math.min(3, state.slot.length);
   for (let i=0;i<n;i++){ const t = state.slot.pop(); t.removed = false; }
@@ -375,7 +547,7 @@ function undo(){
 }
 
 function shuffleTiles(){
-  if (state.over || state.shufflesLeft<=0) return;
+  if (busy || state.over || state.shufflesLeft<=0) return;
   state.shufflesLeft--;
   const alive = state.tiles.filter(t=>!t.removed);
   const types = alive.map(t=>t.type);
@@ -385,7 +557,7 @@ function shuffleTiles(){
 }
 
 function revive(){
-  if (!state.over || state.won || state.revivesLeft<=0) return;
+  if (busy || !state.over || state.won || state.revivesLeft<=0) return;
   state.revivesLeft--;
   state.slot = state.slot.slice(3);          // 清掉槽里最早加入的 3 张，腾出空间
   state.over = false;
@@ -394,6 +566,7 @@ function revive(){
 }
 
 function start(levelKey){
+  clearFx();
   state.level = levelKey;
   state.tiles = buildLevel(levelKey);
   state.slot = [];
@@ -401,6 +574,7 @@ function start(levelKey){
   state.shufflesLeft = 3;
   state.revivesLeft = 1;
   state.over = false; state.won = false;
+  busy = false;
   updateClickable();
   render();
   $('overlay').style.display = 'none';
@@ -408,17 +582,16 @@ function start(levelKey){
     b.classList.toggle('active', b.dataset.level===levelKey));
 }
 
-function preloadImages(){
-  return Promise.all(TILE_IMAGES.map(src => new Promise(res=>{
-    const im = new Image();
-    im.onload = ()=>res(true);
-    im.onerror = ()=>res(false);
-    im.src = src;
-  }))).then(results=>results.forEach((ok,i)=>IMG_OK[i]=ok));
+function clearFx(){
+  document.querySelectorAll('.fly-clone,.burst').forEach(e=>e.remove());
 }
 
-(async function init(){
-  await preloadImages();
+function warmImages(){
+  TILE_IMAGES.forEach(src => { const im = new Image(); im.src = src; });
+}
+
+(function init(){
+  warmImages();
   document.querySelectorAll('.diff-btn').forEach(b=>b.onclick=()=>start(b.dataset.level));
   $('undo').onclick = undo;
   $('shuffle').onclick = shuffleTiles;
@@ -427,6 +600,12 @@ function preloadImages(){
   $('ov-restart').onclick = ()=>start(state.level);
   $('ov-revive').onclick = revive;
   $('ov-close').onclick = ()=>$('overlay').style.display='none';
+  $('mute').onclick = function(){
+    muted = !muted;
+    $('mute').textContent = muted ? '🔇' : '🔊';
+    try{ localStorage.setItem('nlw_mute', muted?'1':'0'); }catch(e){}
+  };
+  $('mute').textContent = muted ? '🔇' : '🔊';
   window.addEventListener('resize', fit);
   start('easy');
 })();
