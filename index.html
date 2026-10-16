@@ -27,10 +27,10 @@
   #app{max-width:600px;margin:0 auto;padding:14px 14px 40px;-webkit-user-select:none;user-select:none}
 
   header{text-align:center;margin-bottom:10px}
-  header h1{margin:0;font-size:26px;letter-spacing:.02em}
-  header .sub{margin:4px 0 0;color:var(--ink2);font-size:13px}
+  header h1{margin:0;font-size:20px;letter-spacing:.02em}
+  header .sub{margin:2px 0 0;color:var(--ink2);font-size:11px}
 
-  .diff{display:flex;justify-content:center;gap:8px;margin:12px 0 10px}
+  .diff{display:flex;justify-content:center;gap:8px;margin:8px 0 8px}
   .diff-btn{
     flex:0 0 auto;padding:7px 18px;border:2px solid var(--face-line);
     background:var(--paper);color:var(--ink2);font-size:14px;font-weight:600;
@@ -38,8 +38,8 @@
   }
   .diff-btn.active{background:linear-gradient(120deg,var(--amber),var(--orange));border-color:var(--orange);color:#fff;box-shadow:var(--shadow)}
 
-  .stats{display:flex;justify-content:center;gap:18px;font-size:13px;color:var(--ink2);margin-bottom:8px}
-  .stats b{color:var(--ink);font-size:15px}
+  .stats{display:flex;justify-content:center;gap:14px;font-size:12px;color:var(--ink2);margin-bottom:4px}
+  .stats b{color:var(--ink);font-size:14px}
 
   #boardWrap{
     display:flex;justify-content:center;overflow:hidden;
@@ -75,7 +75,7 @@
   .tile.clickable:active .face,
   .tile.clickable.pressed .face{transform:scale(.92)}
 
-  .hint{text-align:center;color:var(--ink2);font-size:12.5px;margin:10px 0}
+  .hint{text-align:center;color:var(--ink2);font-size:11px;margin:7px 0}
 
   #slot{
     display:flex;justify-content:center;gap:6px;
@@ -115,6 +115,14 @@
   }
   .fly-clone img{width:100%;height:100%;object-fit:cover;border-radius:9px}
   .fly-clone .emoji{font-size:26px;line-height:1}
+
+  .match-ghost{
+    position:fixed;z-index:205;pointer-events:none;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;border-radius:9px;
+    animation:matchPop .32s cubic-bezier(.34,1.56,.64,1) forwards;
+  }
+  .match-ghost img{width:100%;height:100%;object-fit:cover;border-radius:7px}
+  .match-ghost .emoji{font-size:26px;line-height:1}
 
   .burst{position:fixed;width:8px;height:8px;border-radius:50%;z-index:210;pointer-events:none;
     animation:burstFly .42s ease-out forwards}
@@ -229,18 +237,18 @@ const TILE_EMOJI = ['🐸','🍼','⭐','🥚','🍑','🍭','🎈','🧧','🌟
    copies 必须是 3 的倍数（凑三张才消除），且 types×copies === 总张数。
    地狱：6 层深埋 + 重叠覆盖判定，接近原版的「经常过不去」难度。 ---- */
 const LEVELS = {
-  easy:     { name:'简单', counts:[32, 16],                     types:8,  copies:6  },
-  standard: { name:'标准', counts:[45, 33, 24, 18],             types:10, copies:12 },
-  hell:     { name:'地狱', counts:[60, 48, 36, 27, 18, 9],      types:11, copies:18 }
+  easy:     { name:'简单', counts:[24, 15, 9],                      types:8,  copies:6  },
+  standard: { name:'标准', counts:[30, 26, 22, 18, 14, 10],         types:10, copies:12 },
+  hell:     { name:'地狱', counts:[28, 25, 23, 21, 19, 17, 16, 16], types:11, copies:15 }
 };
 
-const CELL_W = 54, CELL_H = 62, DEPTH = 8, PAD = 16, SLOT_MAX = 7;
+const CELL_W = 66, CELL_H = 74, DEPTH = 9, PAD = 20, SLOT_MAX = 7;
 
 const state = {
   level:'easy', tiles:[], slot:[], over:false, won:false,
   undosLeft:3, shufflesLeft:3, revivesLeft:1
 };
-let boardW = 0, boardH = 0, busy = false;
+let boardW = 0, boardH = 0;
 
 const $ = id => document.getElementById(id);
 
@@ -255,7 +263,9 @@ function layerCells(target){
   const R = Math.ceil(Math.sqrt(target)) + 1;
   for (let gy=-R; gy<=R; gy++){
     for (let gx=-R; gx<=R; gx++){
-      all.push({gx, gy, d: Math.abs(gx)+Math.abs(gy)});
+      // 椭圆距离：横向权重更高 → 牌堆更「瘦高」，更像原版竖金字塔，牌面也能更大
+      const d = Math.sqrt((gx*1.2)*(gx*1.2) + gy*gy);
+      all.push({gx, gy, d});
     }
   }
   all.sort((a,b)=>a.d-b.d);
@@ -387,8 +397,8 @@ function setUse(name, n){
 function fit(){
   const wrap = $('boardWrap');
   const availW = wrap.clientWidth;
-  const s = Math.min(1, availW / boardW);
-  const scale = Math.max(0.4, s);
+  const s = availW / boardW;
+  const scale = Math.min(1.4, Math.max(0.4, s));
   const board = $('board');
   board.style.width = boardW+'px';
   board.style.height = boardH+'px';
@@ -432,35 +442,27 @@ function buzz(ms){ try{ if (navigator.vibrate) navigator.vibrate(ms); }catch(e){
 function slotCellEl(i){ return $('slot').children[i]; }
 
 function animateFly(src, dst, type){
-  return new Promise(res=>{
-    const clone = document.createElement('div');
-    clone.className = 'fly-clone';
-    clone.innerHTML = faceHTML(type);
-    clone.style.width = src.width+'px';
-    clone.style.height = src.height+'px';
-    clone.style.left = src.left+'px';
-    clone.style.top = src.top+'px';
-    document.body.appendChild(clone);
+  const clone = document.createElement('div');
+  clone.className = 'fly-clone';
+  clone.innerHTML = faceHTML(type);
+  clone.style.width = src.width+'px';
+  clone.style.height = src.height+'px';
+  clone.style.left = src.left+'px';
+  clone.style.top = src.top+'px';
+  document.body.appendChild(clone);
 
-    const cell = slotCellEl(state.slot.length-1);
-    const cellFace = cell ? (cell.querySelector('img')||cell.querySelector('.emoji')) : null;
-    if (cellFace) cellFace.style.opacity = '0';
+  const s = Math.min(1, dst.width/src.width, dst.height/src.height);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    clone.style.left = (dst.left + dst.width/2 - src.width/2)+'px';
+    clone.style.top  = (dst.top  + dst.height/2 - src.height/2)+'px';
+    clone.style.transform = 'scale('+s+')';
+  }));
 
-    const s = Math.min(1, dst.width/src.width, dst.height/src.height);
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      clone.style.left = (dst.left + dst.width/2 - src.width/2)+'px';
-      clone.style.top  = (dst.top  + dst.height/2 - src.height/2)+'px';
-      clone.style.transform = 'scale('+s+')';
-    }));
-
-    setTimeout(()=>{
-      clone.remove();
-      if (cellFace){ cellFace.style.transition='opacity .12s ease'; cellFace.style.opacity = '1'; }
-      const c = slotCellEl(state.slot.length-1);
-      if (c){ c.classList.add('landing'); setTimeout(()=>c.classList.remove('landing'), 240); }
-      res();
-    }, 185);
-  });
+  setTimeout(()=>{
+    clone.style.transition = 'opacity .16s ease';
+    clone.style.opacity = '0';
+    setTimeout(()=>clone.remove(), 160);
+  }, 170);
 }
 
 function spawnBurst(rect){
@@ -482,40 +484,51 @@ function spawnBurst(rect){
 }
 
 /* ================= 核心流程 ================= */
-function findMatch(){
+// 消除时的弹出鬼影（纯视觉，不阻塞状态）
+function spawnMatchGhost(rect, type){
+  const g = document.createElement('div');
+  g.className = 'match-ghost';
+  g.innerHTML = faceHTML(type);
+  g.style.left = rect.left+'px';
+  g.style.top = rect.top+'px';
+  g.style.width = rect.width+'px';
+  g.style.height = rect.height+'px';
+  document.body.appendChild(g);
+  setTimeout(()=>g.remove(), 340);
+}
+
+// 同步处理所有可消除的三张：立刻更新状态，动画用鬼影补足（不阻塞连续点击）
+function resolveMatchesWithFx(){
+  const toRemove = [];
   const counts = new Map();
   state.slot.forEach((s,i)=>counts.set(s.type,(counts.get(s.type)||0)+1));
   for (const [type,count] of counts){
-    if (count >= 3){
-      const idx = [];
-      for (let i=0;i<state.slot.length && idx.length<3;i++){
-        if (state.slot[i].type===type) idx.push(i);
-      }
-      return {type, idx};
+    const rem = Math.floor(count/3)*3;
+    let taken = 0;
+    for (let i=0;i<state.slot.length && taken<rem;i++){
+      if (state.slot[i].type===type){ toRemove.push(i); taken++; }
     }
   }
-  return null;
-}
+  if (toRemove.length===0){ checkEnd(); return; }
 
-function eliminateMatch(m){
-  return new Promise(res=>{
-    sndMatch(); buzz(20);
-    const cells = m.idx.map(i=>slotCellEl(i)).filter(Boolean);
-    cells.forEach(c=>c.classList.add('matching'));
-    const mid = cells[1] || cells[0];
-    if (mid) spawnBurst(mid.getBoundingClientRect());
-    setTimeout(()=>{
-      const set = new Set(m.idx);
-      state.slot = state.slot.filter((s,i)=>!set.has(i));
-      render();
-      res();
-    }, 300);
+  const ghosts = [];
+  toRemove.forEach(i=>{
+    const c = slotCellEl(i);
+    if (c) ghosts.push({rect:c.getBoundingClientRect(), type:state.slot[i].type});
   });
+  const burstRect = ghosts[1] ? ghosts[1].rect : (ghosts[0] ? ghosts[0].rect : null);
+
+  sndMatch(); buzz(20);
+  const set = new Set(toRemove);
+  state.slot = state.slot.filter((s,i)=>!set.has(i));
+  render();
+  ghosts.forEach(g=>spawnMatchGhost(g.rect, g.type));
+  if (burstRect) spawnBurst(burstRect);
+  checkEnd();
 }
 
-async function onTileClick(t){
-  if (busy || state.over || !t.clickable) return;
-  busy = true;
+function onTileClick(t){
+  if (state.over || !t.clickable) return;
 
   const faceEl = t.el ? t.el.querySelector('.face') : null;
   const srcRect = faceEl ? faceEl.getBoundingClientRect() : null;
@@ -530,18 +543,10 @@ async function onTileClick(t){
   if (srcRect){
     const cell = slotCellEl(state.slot.length-1);
     const cellRect = cell ? cell.getBoundingClientRect() : null;
-    if (cellRect) await animateFly(srcRect, cellRect, t.type);
+    if (cellRect) animateFly(srcRect, cellRect, t.type);
   }
 
-  // 循环消除（可能连消），每次都有动画
-  while (true){
-    const m = findMatch();
-    if (!m) break;
-    await eliminateMatch(m);
-  }
-
-  busy = false;
-  checkEnd();
+  resolveMatchesWithFx();
 }
 
 function checkEnd(){
@@ -570,7 +575,7 @@ function lose(){
 }
 
 function undo(){
-  if (busy || state.over || state.undosLeft<=0 || state.slot.length===0) return;
+  if (state.over || state.undosLeft<=0 || state.slot.length===0) return;
   state.undosLeft--;
   const n = Math.min(3, state.slot.length);
   for (let i=0;i<n;i++){ const t = state.slot.pop(); t.removed = false; }
@@ -579,7 +584,7 @@ function undo(){
 }
 
 function shuffleTiles(){
-  if (busy || state.over || state.shufflesLeft<=0) return;
+  if (state.over || state.shufflesLeft<=0) return;
   state.shufflesLeft--;
   const alive = state.tiles.filter(t=>!t.removed);
   const types = alive.map(t=>t.type);
@@ -589,7 +594,7 @@ function shuffleTiles(){
 }
 
 function revive(){
-  if (busy || !state.over || state.won || state.revivesLeft<=0) return;
+  if (!state.over || state.won || state.revivesLeft<=0) return;
   state.revivesLeft--;
   state.slot = state.slot.slice(3);          // 清掉槽里最早加入的 3 张，腾出空间
   state.over = false;
@@ -606,7 +611,6 @@ function start(levelKey){
   state.shufflesLeft = 3;
   state.revivesLeft = 1;
   state.over = false; state.won = false;
-  busy = false;
   updateClickable();
   render();
   $('overlay').style.display = 'none';
@@ -615,7 +619,7 @@ function start(levelKey){
 }
 
 function clearFx(){
-  document.querySelectorAll('.fly-clone,.burst').forEach(e=>e.remove());
+  document.querySelectorAll('.fly-clone,.burst,.match-ghost').forEach(e=>e.remove());
 }
 
 function warmImages(){
